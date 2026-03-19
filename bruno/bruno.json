@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "Tesla Charger Status",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

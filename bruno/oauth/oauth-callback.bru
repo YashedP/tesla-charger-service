@@ -1,0 +1,25 @@
+meta {
+  name: OAuth Callback
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/oauth/callback?code=PLACEHOLDER&state=PLACEHOLDER
+  body: none
+  auth: none
+}
+
+docs {
+  # OAuth Callback
+
+  Handles the OAuth2 callback from Tesla's authorization server.
+
+  ## Auth
+  None required.
+
+  ## Note
+  This request will fail in isolation — it requires valid `code` and `state`
+  query parameters from a real OAuth flow. Included here for documentation
+  and testing after completing the OAuth flow in a browser.
+}

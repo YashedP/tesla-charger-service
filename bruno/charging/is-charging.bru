@@ -1,0 +1,39 @@
+meta {
+  name: Check Charging Status
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/v1/is-charging
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{bearer_token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.is_charging: isBoolean
+}
+
+docs {
+  # Check Charging Status
+  
+  Returns the current charging state of the Tesla vehicle.
+  
+  ## Auth
+  Requires a valid bearer token (Tesla Fleet API access token).
+  
+  ## Response (200)
+  ```json
+  {
+    "is_charging": true
+  }
+  ```
+  
+  ## Error Response (401)
+  Returned when the bearer token is missing or invalid.
+}

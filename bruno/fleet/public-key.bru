@@ -1,0 +1,27 @@
+meta {
+  name: Fleet API Public Key
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/.well-known/appspecific/com.tesla.3p.public-key.pem
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/x-pem-file
+}
+
+docs {
+  # Fleet API Public Key
+  
+  Returns the public key used by Tesla Fleet API for third-party authentication.
+  
+  ## Auth
+  None required.
+  
+  ## Response (200)
+  PEM-encoded public key.
+}
