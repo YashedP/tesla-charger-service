@@ -13,7 +13,7 @@ import (
 
 	"tesla-charger-status/internal/config"
 	"tesla-charger-status/internal/crypto"
-	"tesla-charger-status/internal/httpapi"
+	"tesla-charger-status/httpapi"
 	"tesla-charger-status/internal/paths"
 	"tesla-charger-status/internal/store"
 	"tesla-charger-status/internal/tesla"

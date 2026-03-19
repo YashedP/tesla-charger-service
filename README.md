@@ -184,7 +184,7 @@ Volumes keep state:
 ## Repo layout
 
 - `cmd/server/main.go` entrypoint
-- `internal/httpapi` HTTP handlers/routes
+- `httpapi` HTTP handlers/routes
 - `internal/tesla` Tesla API client
 - `internal/store` SQLite encrypted token store
 - `internal/crypto` AES-GCM helpers
