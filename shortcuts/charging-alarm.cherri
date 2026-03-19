@@ -6,11 +6,11 @@
 #include 'actions/scripting'
 #include 'actions/calendar'
 
-// Config — replace BEARER_TOKEN_HERE with your actual token before compiling
-@url = "https://fleet.yashjani.com/v1/is-charging"
+// Config — placeholders are replaced at build time via `make shortcut`
+@url = "__APP_BASE_URL__/v1/is-charging"
 
 // Hit the API (headers param requires inline dictionary literal)
-const response = downloadURL(@url, {"Authorization": "Bearer BEARER_TOKEN_HERE"})
+const response = downloadURL(@url, {"Authorization": "Bearer __SHORTCUT_BEARER_TOKEN__"})
 
 // Parse JSON response
 const charging = getValue(response, "is_charging")

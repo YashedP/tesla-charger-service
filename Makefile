@@ -52,5 +52,11 @@ endif
 	$(PYTHON) scripts/register_partner.py --domain $(DOMAIN)
 
 shortcut: ## Compile Apple Shortcut from Cherri source
-	cherri shortcuts/charging-alarm.cherri
+	@test -f .env || { echo "Error: .env file not found. Copy .env.example and fill in values."; exit 1; }
+	@. ./.env && sed \
+		-e "s|__APP_BASE_URL__|$$APP_BASE_URL|g" \
+		-e "s|__SHORTCUT_BEARER_TOKEN__|$$SHORTCUT_BEARER_TOKEN|g" \
+		shortcuts/charging-alarm.cherri > shortcuts/.charging-alarm.generated.cherri
+	cherri shortcuts/.charging-alarm.generated.cherri
+	@rm -f shortcuts/.charging-alarm.generated.cherri
 	@echo "Built: shortcuts/Tesla Charging Check.shortcut"
