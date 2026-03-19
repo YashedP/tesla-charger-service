@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"tesla-charger-status/internal/config"
+	"tesla-charger-status/internal/paths"
 	"tesla-charger-status/internal/store"
 
 	_ "tesla-charger-status/docs"
@@ -66,14 +68,34 @@ func NewRouter(cfg config.Config, oauthCfg *oauth2.Config, tokens TokenStore, te
 	}
 
 	r := chi.NewRouter()
+	r.Get("/.well-known/appspecific/com.tesla.3p.public-key.pem", s.handleFleetPublicKey)
 	r.Get("/oauth/start", s.handleOAuthStart)
 	r.Get("/oauth/callback", s.handleOAuthCallback)
 	r.Get("/v1/is-charging", s.handleIsCharging)
+	r.Get("/docs", http.RedirectHandler("/docs/", http.StatusMovedPermanently).ServeHTTP)
 	r.Get("/docs/*", httpSwagger.Handler(
 		httpSwagger.URL("/docs/doc.json"),
 	))
 
 	return r
+}
+
+// @Summary Serve Fleet API EC public key
+// @Description Returns the EC public key PEM used for Tesla Fleet API partner registration. Tesla fetches this endpoint unauthenticated.
+// @Tags fleet
+// @Produce octet-stream
+// @Success 200 {string} string "PEM-encoded EC public key"
+// @Failure 404 {string} string "public key not found"
+// @Router /.well-known/appspecific/com.tesla.3p.public-key.pem [get]
+func (s *Server) handleFleetPublicKey(w http.ResponseWriter, _ *http.Request) {
+	pem, err := os.ReadFile(paths.FleetECPublicKeyPath)
+	if err != nil {
+		http.Error(w, "public key not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-pem-file")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(pem)
 }
 
 // @Summary Start Tesla OAuth flow

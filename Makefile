@@ -3,7 +3,7 @@ GO ?= go
 SWAG ?= swag
 KEY_PATH ?= ./secrets/token_enc_key.b64
 
-.PHONY: help key-generate key-generate-force key-validate key-scripts run docs lint
+.PHONY: help key-generate key-generate-force key-validate key-scripts run docs lint fleet-keygen fleet-register
 
 help:
 	@echo "Available targets:"
@@ -14,6 +14,8 @@ help:
 	@echo "  make run                 # Start Go backend server"
 	@echo "  make docs                # Generate Swagger docs"
 	@echo "  make lint                # Run golangci-lint"
+	@echo "  make fleet-keygen        # Generate EC key pair for Fleet API partner registration"
+	@echo "  make fleet-register      # Register as Tesla Fleet API partner"
 
 key-generate:
 	$(PYTHON) scripts/gen_token_key.py --path $(KEY_PATH)
@@ -34,3 +36,13 @@ lint:
 
 run:
 	$(GO) run ./cmd/server
+
+fleet-keygen:
+	@mkdir -p ./secrets
+	openssl ecparam -name prime256v1 -genkey -noout -out ./secrets/fleet_ec_private.pem
+	openssl ec -in ./secrets/fleet_ec_private.pem -pubout -out ./secrets/fleet_ec_public.pem
+	chmod 600 ./secrets/fleet_ec_private.pem
+	chmod 644 ./secrets/fleet_ec_public.pem
+
+fleet-register:
+	$(PYTHON) scripts/register_partner.py
