@@ -1,0 +1,23 @@
+meta {
+  name: Swagger UI
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/docs
+  body: none
+  auth: none
+}
+
+docs {
+  # Swagger UI
+  
+  Serves the interactive Swagger/OpenAPI documentation page.
+  
+  ## Auth
+  None required.
+  
+  ## Response (200)
+  HTML page with the Swagger UI.
+}

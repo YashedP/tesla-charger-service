@@ -1,0 +1,25 @@
+meta {
+  name: Start OAuth Flow
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/oauth/start
+  body: none
+  auth: none
+}
+
+docs {
+  # Start OAuth Flow
+
+  Initiates the Tesla OAuth2 authorization flow.
+
+  ## Auth
+  None required.
+
+  ## Behavior
+  Returns a 302 redirect to Tesla's authorization endpoint.
+  Bruno will not follow this cross-domain redirect — this is expected.
+  Use a browser to complete the full OAuth flow.
+}

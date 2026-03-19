@@ -3,6 +3,7 @@
 Personal-use Go service that wraps Tesla Fleet API and exposes one Shortcut-friendly endpoint.
 
 - `GET /v1/is-charging` returns plain text `true` or `false`
+- `GET /.well-known/appspecific/com.tesla.3p.public-key.pem` serves the Fleet API EC public key (unauthenticated — Tesla fetches this during partner registration)
 - OAuth bootstrap endpoints:
   - `GET /oauth/start`
   - `GET /oauth/callback`
@@ -21,6 +22,7 @@ This service lets you call one URL (for example from iPhone Shortcuts at 11:00 P
 - Token storage: encrypted values in SQLite
 - Database path (fixed): `./data/tesla.sqlite`
 - Encryption key file (fixed): `./secrets/token_enc_key.b64`
+- Fleet API EC key pair: `./secrets/fleet_ec_private.pem`, `./secrets/fleet_ec_public.pem`
 - Wrapper endpoint auth: static bearer token (`SHORTCUT_BEARER_TOKEN`)
 
 If `./data/tesla.sqlite` does not exist, it is created automatically on startup.
@@ -95,6 +97,36 @@ go run ./cmd/server
 Server default address: `http://localhost:5000`
 The app automatically loads `.env` for native runs.
 
+## Fleet API partner registration (one-time)
+
+Tesla Fleet API requires your app to be registered as a partner in your region. This is a one-time setup.
+
+1. Generate the EC key pair:
+
+```bash
+make fleet-keygen
+```
+
+This creates `./secrets/fleet_ec_private.pem` and `./secrets/fleet_ec_public.pem`.
+
+2. Deploy the app so that `https://<your-domain>/.well-known/appspecific/com.tesla.3p.public-key.pem` is publicly reachable. Tesla fetches this endpoint unauthenticated during registration.
+
+3. Register your domain with Tesla:
+
+```bash
+# Preview what will be sent
+python3 scripts/register_partner.py --dry-run
+
+# Execute registration (requires TESLA_CLIENT_ID and TESLA_CLIENT_SECRET in .env)
+make fleet-register
+```
+
+By default the script registers `fleet.yashjani.com`. Override with `--domain`:
+
+```bash
+python3 scripts/register_partner.py --domain your-domain.com
+```
+
 ## OAuth bootstrap (one-time per token grant)
 
 1. Open:
@@ -160,6 +192,7 @@ Volumes keep state:
 ## Security notes
 
 - Keep `./secrets/token_enc_key.b64` private and never commit it.
+- Keep `./secrets/fleet_ec_private.pem` private and never commit it. The public key (`fleet_ec_public.pem`) is served publicly by design.
 - Keep `.env` private; it includes secrets.
 - `SHORTCUT_BEARER_TOKEN` should be long and random.
 - This is intended for personal/single-user usage.
@@ -188,7 +221,7 @@ Volumes keep state:
 - `internal/tesla` Tesla API client
 - `internal/store` SQLite encrypted token store
 - `internal/crypto` AES-GCM helpers
-- `scripts/` key generation/validation tools
+- `scripts/` key generation/validation/registration tools
 
 ## Current limitations
 
