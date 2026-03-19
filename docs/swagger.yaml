@@ -1,0 +1,85 @@
+basePath: /
+host: localhost:5000
+info:
+  contact: {}
+  description: Service that wraps the Tesla Fleet API to report vehicle charging state.
+  title: Tesla Charger Status API
+  version: "1.0"
+paths:
+  /oauth/callback:
+    get:
+      description: Exchanges the authorization code for tokens and stores them encrypted
+        in SQLite.
+      parameters:
+      - description: OAuth state parameter
+        in: query
+        name: state
+        required: true
+        type: string
+      - description: Authorization code
+        in: query
+        name: code
+        required: true
+        type: string
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: OAuth successful
+          schema:
+            type: string
+        "400":
+          description: missing state, code, or cookie
+          schema:
+            type: string
+        "500":
+          description: exchange or persistence error
+          schema:
+            type: string
+      summary: Handle Tesla OAuth callback
+      tags:
+      - oauth
+  /oauth/start:
+    get:
+      description: Redirects the user to Tesla's OAuth authorization page. Sets a
+        state cookie for CSRF protection.
+      produces:
+      - text/plain
+      responses:
+        "302":
+          description: Redirect to Tesla OAuth
+          schema:
+            type: string
+        "500":
+          description: internal error
+          schema:
+            type: string
+      summary: Start Tesla OAuth flow
+      tags:
+      - oauth
+  /v1/is-charging:
+    get:
+      description: Returns "true" or "false" indicating whether the configured Tesla
+        vehicle is currently charging. Errors map to "false".
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: true or false
+          schema:
+            type: string
+        "401":
+          description: unauthorized
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: Check if vehicle is charging
+      tags:
+      - charging
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

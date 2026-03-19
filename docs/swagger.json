@@ -1,0 +1,125 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "Service that wraps the Tesla Fleet API to report vehicle charging state.",
+        "title": "Tesla Charger Status API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "host": "localhost:5000",
+    "basePath": "/",
+    "paths": {
+        "/oauth/callback": {
+            "get": {
+                "description": "Exchanges the authorization code for tokens and stores them encrypted in SQLite.",
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "oauth"
+                ],
+                "summary": "Handle Tesla OAuth callback",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth state parameter",
+                        "name": "state",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Authorization code",
+                        "name": "code",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OAuth successful",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "missing state, code, or cookie",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "exchange or persistence error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/oauth/start": {
+            "get": {
+                "description": "Redirects the user to Tesla's OAuth authorization page. Sets a state cookie for CSRF protection.",
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "oauth"
+                ],
+                "summary": "Start Tesla OAuth flow",
+                "responses": {
+                    "302": {
+                        "description": "Redirect to Tesla OAuth",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "internal error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/is-charging": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns \"true\" or \"false\" indicating whether the configured Tesla vehicle is currently charging. Errors map to \"false\".",
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "charging"
+                ],
+                "summary": "Check if vehicle is charging",
+                "responses": {
+                    "200": {
+                        "description": "true or false",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

@@ -40,7 +40,7 @@ func NewSQLiteTokenStore(dbPath string, cipher StringCipher) (*SQLiteTokenStore,
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite db: %w", err)
 	}
-	
+
 	store := &SQLiteTokenStore{db: db, cipher: cipher}
 	if err := store.migrate(context.Background()); err != nil {
 		_ = db.Close()

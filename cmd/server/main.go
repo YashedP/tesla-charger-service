@@ -21,6 +21,14 @@ import (
 
 const privateDirPerm os.FileMode = 0o700
 
+// @title Tesla Charger Status API
+// @version 1.0
+// @description Service that wraps the Tesla Fleet API to report vehicle charging state.
+// @host localhost:5000
+// @BasePath /
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
 func main() {
 	logger := log.New(os.Stdout, "", log.LstdFlags|log.LUTC)
 
@@ -52,7 +60,7 @@ func main() {
 	if err != nil {
 		logger.Fatalf("initialize token store at %s: %v", paths.SQLitePath, err)
 	}
-	defer tokenStore.Close()
+	defer func() { _ = tokenStore.Close() }()
 
 	oauthCfg := &oauth2.Config{
 		ClientID:     cfg.TeslaClientID,

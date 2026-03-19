@@ -38,6 +38,9 @@ data/*
 secrets/*
 !secrets/.gitkeep
 
+# Agent artifacts
+.agent/
+
 # Editor/IDE
 # .idea/
 # .vscode/

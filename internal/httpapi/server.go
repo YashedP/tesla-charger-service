@@ -14,10 +14,13 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	httpSwagger "github.com/swaggo/http-swagger"
 	"golang.org/x/oauth2"
 
 	"tesla-charger-status/internal/config"
 	"tesla-charger-status/internal/store"
+
+	_ "tesla-charger-status/docs"
 )
 
 const (
@@ -55,10 +58,20 @@ func NewRouter(cfg config.Config, oauthCfg *oauth2.Config, tokens TokenStore, te
 	r.Get("/oauth/start", s.handleOAuthStart)
 	r.Get("/oauth/callback", s.handleOAuthCallback)
 	r.Get("/v1/is-charging", s.handleIsCharging)
+	r.Get("/docs/*", httpSwagger.Handler(
+		httpSwagger.URL("/docs/doc.json"),
+	))
 
 	return r
 }
 
+// @Summary Start Tesla OAuth flow
+// @Description Redirects the user to Tesla's OAuth authorization page. Sets a state cookie for CSRF protection.
+// @Tags oauth
+// @Produce plain
+// @Success 302 {string} string "Redirect to Tesla OAuth"
+// @Failure 500 {string} string "internal error"
+// @Router /oauth/start [get]
 func (s *Server) handleOAuthStart(w http.ResponseWriter, r *http.Request) {
 	state, err := randomState(24)
 	if err != nil {
@@ -84,6 +97,16 @@ func (s *Server) handleOAuthStart(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
+// @Summary Handle Tesla OAuth callback
+// @Description Exchanges the authorization code for tokens and stores them encrypted in SQLite.
+// @Tags oauth
+// @Produce plain
+// @Param state query string true "OAuth state parameter"
+// @Param code query string true "Authorization code"
+// @Success 200 {string} string "OAuth successful"
+// @Failure 400 {string} string "missing state, code, or cookie"
+// @Failure 500 {string} string "exchange or persistence error"
+// @Router /oauth/callback [get]
 func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 	if state == "" {
@@ -135,6 +158,14 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, "OAuth successful. You can now call /v1/is-charging.\n")
 }
 
+// @Summary Check if vehicle is charging
+// @Description Returns "true" or "false" indicating whether the configured Tesla vehicle is currently charging. Errors map to "false".
+// @Tags charging
+// @Produce plain
+// @Security BearerAuth
+// @Success 200 {string} string "true or false"
+// @Failure 401 {string} string "unauthorized"
+// @Router /v1/is-charging [get]
 func (s *Server) handleIsCharging(w http.ResponseWriter, r *http.Request) {
 	if !validBearer(r.Header.Get("Authorization"), s.cfg.ShortcutBearerToken) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
