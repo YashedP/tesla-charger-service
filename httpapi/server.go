@@ -22,13 +22,15 @@ import (
 	"tesla-charger-service/internal/config"
 	"tesla-charger-service/internal/paths"
 	"tesla-charger-service/internal/store"
+	"tesla-charger-service/internal/tesla"
 
 	_ "tesla-charger-service/docs"
 )
 
 const (
 	oauthStateCookieName = "oauth_state"
-	requestTimeout       = 20 * time.Second
+	requestTimeout       = 45 * time.Second
+	wakePollInterval     = 2 * time.Second
 )
 
 type TokenStore interface {
@@ -38,6 +40,8 @@ type TokenStore interface {
 
 type TeslaClient interface {
 	GetChargingState(ctx context.Context, httpClient *http.Client, vin string) (string, error)
+	WakeUp(ctx context.Context, httpClient *http.Client, vin string) error
+	GetVehicleState(ctx context.Context, httpClient *http.Client, vin string) (string, error)
 }
 
 // ChargingResponse represents the /v1/is-charging response.
@@ -192,7 +196,7 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary Check if vehicle is charging
-// @Description Returns whether the configured Tesla vehicle is currently charging. Errors map to false.
+// @Description Returns whether the configured Tesla vehicle is currently charging. Wakes the vehicle if asleep. Defaults to is_charging=true on unrecoverable errors (safe default to prevent false alarms).
 // @Tags charging
 // @Produce json
 // @Security BearerAuth
@@ -237,9 +241,19 @@ func (s *Server) handleIsCharging(w http.ResponseWriter, r *http.Request) {
 	httpClient := s.oauthCfg.Client(ctx, fresh)
 	state, err := s.tesla.GetChargingState(ctx, httpClient, s.cfg.TeslaVIN)
 	if err != nil {
-		s.logger.Printf("is-charging: tesla status: %v", err)
-		s.writeJSON(w, http.StatusOK, ChargingResponse{IsCharging: false})
-		return
+		if errors.Is(err, tesla.ErrVehicleUnavailable) {
+			s.logger.Printf("is-charging: vehicle asleep, attempting wake")
+			state, err = tesla.WakeAndGetChargingState(ctx, s.tesla, httpClient, s.cfg.TeslaVIN, wakePollInterval)
+			if err != nil {
+				s.logger.Printf("is-charging: wake failed: %v — defaulting to charging=true", err)
+				s.writeJSON(w, http.StatusOK, ChargingResponse{IsCharging: true})
+				return
+			}
+		} else {
+			s.logger.Printf("is-charging: tesla status: %v — defaulting to charging=true", err)
+			s.writeJSON(w, http.StatusOK, ChargingResponse{IsCharging: true})
+			return
+		}
 	}
 
 	isCharging := strings.EqualFold(state, "Charging") || strings.EqualFold(state, "Complete")

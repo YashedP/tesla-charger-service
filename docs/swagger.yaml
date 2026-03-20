@@ -89,7 +89,8 @@ paths:
   /v1/is-charging:
     get:
       description: Returns whether the configured Tesla vehicle is currently charging.
-        Errors map to false.
+        Wakes the vehicle if asleep. Defaults to is_charging=true on unrecoverable
+        errors (safe default to prevent false alarms).
       produces:
       - application/json
       responses:

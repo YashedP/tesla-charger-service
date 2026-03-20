@@ -122,7 +122,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns whether the configured Tesla vehicle is currently charging. Errors map to false.",
+                "description": "Returns whether the configured Tesla vehicle is currently charging. Wakes the vehicle if asleep. Defaults to is_charging=true on unrecoverable errors (safe default to prevent false alarms).",
                 "produces": [
                     "application/json"
                 ],
