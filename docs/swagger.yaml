@@ -17,6 +17,24 @@ info:
   title: Tesla Charger Status API
   version: "1.0"
 paths:
+  /.well-known/appspecific/com.tesla.3p.public-key.pem:
+    get:
+      description: Returns the EC public key PEM used for Tesla Fleet API partner
+        registration. Tesla fetches this endpoint unauthenticated.
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: PEM-encoded EC public key
+          schema:
+            type: string
+        "404":
+          description: public key not found
+          schema:
+            type: string
+      summary: Serve Fleet API EC public key
+      tags:
+      - fleet
   /oauth/callback:
     get:
       description: Exchanges the authorization code for tokens and stores them encrypted

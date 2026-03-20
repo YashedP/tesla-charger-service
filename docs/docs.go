@@ -15,6 +15,32 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/.well-known/appspecific/com.tesla.3p.public-key.pem": {
+            "get": {
+                "description": "Returns the EC public key PEM used for Tesla Fleet API partner registration. Tesla fetches this endpoint unauthenticated.",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "fleet"
+                ],
+                "summary": "Serve Fleet API EC public key",
+                "responses": {
+                    "200": {
+                        "description": "PEM-encoded EC public key",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "public key not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/oauth/callback": {
             "get": {
                 "description": "Exchanges the authorization code for tokens and stores them encrypted in SQLite.",
