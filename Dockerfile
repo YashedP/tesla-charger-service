@@ -17,5 +17,4 @@ COPY scripts /app/scripts
 RUN mkdir -p /app/data /app/secrets && chown -R app:app /app
 USER app
 
-EXPOSE 5000
 ENTRYPOINT ["/app/tesla-charger-service"]
