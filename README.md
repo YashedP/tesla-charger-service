@@ -1,4 +1,4 @@
-# Tesla Charger Status
+# Tesla Charger Service
 
 Personal Go service that wraps the Tesla Fleet API into one simple endpoint: "is my car charging?"
 
