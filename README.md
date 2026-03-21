@@ -11,6 +11,7 @@ You'll need:
 - Tesla Fleet API credentials (`TESLA_CLIENT_ID`, `TESLA_CLIENT_SECRET`) from the [Tesla Developer Portal](https://developer.tesla.com/)
 - Your vehicle VIN
 - Go 1.22+ / Python 3.9+, or Docker
+- [Cherri](https://cherrilang.org/) compiler (only to rebuild the shortcut): `go install github.com/electrikmilk/cherri@main`
 
 ```bash
 # generate encryption key
@@ -65,13 +66,18 @@ curl -H "Authorization: Bearer <SHORTCUT_BEARER_TOKEN>" http://localhost:5000/v1
 # {"is_charging": true}
 ```
 
-### iPhone Shortcuts
+### iPhone Shortcut
 
-1. Create a daily automation (e.g. 11 PM)
-2. Action: **Get Contents of URL**
-  - URL: `https://your-domain/v1/is-charging`
-  - Header: `Authorization: Bearer <your-token>`
-3. Branch on `true` / `false`
+The shortcut source lives in `shortcuts/charging-alarm.cherri`. To build:
+
+```bash
+make shortcut
+# Built: shortcuts/Tesla Charging Check.shortcut
+```
+
+This reads `APP_BASE_URL` and `SHORTCUT_BEARER_TOKEN` from `.env` and bakes them into the compiled shortcut.
+
+To install, AirDrop or open `shortcuts/Tesla Charging Check.shortcut` on your iPhone. Then create a daily Shortcuts automation (e.g. 11 PM) to run it.
 
 ## Endpoints
 
@@ -94,6 +100,7 @@ internal/tesla/   Fleet API client
 internal/store/   SQLite encrypted token store
 internal/crypto/  AES-GCM helpers
 scripts/          key gen, validation, partner registration
+shortcuts/        Cherri source + compiled Apple Shortcut
 bruno/            API collection for manual testing
 ```
 
