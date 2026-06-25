@@ -66,6 +66,24 @@ curl -H "Authorization: Bearer <SHORTCUT_BEARER_TOKEN>" http://localhost:5000/v1
 # {"is_charging": true}
 ```
 
+## Run on boot with systemd (Arch Linux)
+
+The project uses systemd as the single owner of the Compose lifecycle. Install
+and enable it with:
+
+```bash
+make setup
+make install
+```
+
+Useful commands:
+
+```bash
+make status
+make logs
+make restart
+```
+
 ### iPhone Shortcut
 
 The shortcut source lives in `shortcuts/charging-alarm.cherri`. To build:
@@ -119,5 +137,3 @@ bruno/            API collection for manual testing
 | `missing required env vars`            | Check `.env`                                                                |
 | OAuth callback fails                   | `APP_BASE_URL/oauth/callback` must match Tesla app config exactly           |
 | Always returns `false`                 | Check OAuth completed, VIN is correct, `TESLA_BASE_URL` matches your region |
-
-
