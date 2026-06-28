@@ -249,3 +249,4 @@ bruno/            API collection for manual testing
 | `missing required env vars`            | Check `.env`                                                                |
 | OAuth callback fails                   | `APP_BASE_URL/oauth/callback` must match Tesla app config exactly           |
 | Always returns `false`                 | Check OAuth completed, VIN is correct, `TESLA_BASE_URL` matches your region |
+
