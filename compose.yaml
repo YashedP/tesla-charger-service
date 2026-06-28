@@ -3,14 +3,23 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    user: "${UID:-1000}:${GID:-1000}"
-    environment:
-      HOME: /tmp
-      XDG_CACHE_HOME: /tmp/.cache
-    ports:
-      - "${PORT:-5000}:${PORT:-5000}"
     env_file:
       - .env
+    expose:
+      - "${PORT:-5000}"
     volumes:
-      - ./data:/app/data
-      - ./secrets:/app/secrets
+      - tesla_charger_service_data:/app/data
+      - tesla_charger_service_secrets:/app/secrets
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:$${PORT:-5000}/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  tesla_charger_service_data:
+    name: tesla_charger_service_data
+  tesla_charger_service_secrets:
+    name: tesla_charger_service_secrets

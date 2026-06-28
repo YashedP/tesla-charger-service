@@ -61,6 +61,7 @@ func NewRouter(cfg config.Config, oauthCfg *oauth2.Config, tokens store.TokenSto
 	}
 
 	r := chi.NewRouter()
+	r.Get("/health", s.handleHealth)
 	r.Get("/.well-known/appspecific/com.tesla.3p.public-key.pem", s.handleFleetPublicKey)
 	r.Get("/oauth/start", s.handleOAuthStart)
 	r.Get("/oauth/callback", s.handleOAuthCallback)
@@ -71,6 +72,18 @@ func NewRouter(cfg config.Config, oauthCfg *oauth2.Config, tokens store.TokenSto
 	))
 
 	return r
+}
+
+// @Summary Health check
+// @Description Returns OK when the HTTP process is running.
+// @Tags health
+// @Produce plain
+// @Success 200 {string} string "ok"
+// @Router /health [get]
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, "ok\n")
 }
 
 // @Summary Serve Fleet API EC public key

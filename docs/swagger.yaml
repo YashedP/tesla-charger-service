@@ -35,6 +35,19 @@ paths:
       summary: Serve Fleet API EC public key
       tags:
       - fleet
+  /health:
+    get:
+      description: Returns OK when the HTTP process is running.
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: ok
+          schema:
+            type: string
+      summary: Health check
+      tags:
+      - health
   /oauth/callback:
     get:
       description: Exchanges the authorization code for tokens and stores them encrypted

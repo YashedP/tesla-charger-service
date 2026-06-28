@@ -35,6 +35,26 @@
                 }
             }
         },
+        "/health": {
+            "get": {
+                "description": "Returns OK when the HTTP process is running.",
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "ok",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/oauth/callback": {
             "get": {
                 "description": "Exchanges the authorization code for tokens and stores them encrypted in SQLite.",

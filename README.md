@@ -102,12 +102,100 @@ To install, AirDrop or open `shortcuts/Tesla Charging Check.shortcut` on your iP
 
 | Route                                                      | Auth         | Purpose                                   |
 | ---------------------------------------------------------- | ------------ | ----------------------------------------- |
+| `GET /health`                                              | none         | Process health check                      |
 | `GET /v1/is-charging`                                      | Bearer token | Charging status                           |
 | `GET /.well-known/appspecific/com.tesla.3p.public-key.pem` | none         | Fleet API public key (Tesla fetches this) |
 | `GET /oauth/start`                                         | none         | Start OAuth flow                          |
 | `GET /oauth/callback`                                      | none         | OAuth callback                            |
 | `GET /docs/`                                               | none         | Swagger UI                                |
 
+
+## Dokploy deployment
+
+Dokploy runs this service from the Compose resource at `./compose.yaml`.
+
+Production settings:
+
+- Service: `tesla-charger-service`
+- Domain: `fleet.yashjani.com`
+- App port: `5050`
+- Env vars: configured in Dokploy's Compose environment UI and loaded through `.env`
+- Runtime state:
+  - `tesla_charger_service_data` mounted at `/app/data`
+  - `tesla_charger_service_secrets` mounted at `/app/secrets`
+
+The Compose file intentionally uses `expose` instead of host `ports` so Traefik can route to the container without binding a host port.
+
+Set these values in Dokploy before deploying:
+
+```text
+TESLA_CLIENT_ID
+TESLA_CLIENT_SECRET
+APP_BASE_URL=https://fleet.yashjani.com
+TESLA_VIN
+SHORTCUT_BEARER_TOKEN
+TESLA_BASE_URL
+PORT=5050
+```
+
+### One-time volume migration
+
+Before deploying the Dokploy Compose version, copy the old bare-metal state into the Docker volumes:
+
+```bash
+sudo systemctl stop tesla-charger.service || true
+sudo systemctl disable tesla-charger.service || true
+```
+
+```bash
+find /home/yash/tesla-charger-service/data /home/yash/tesla-charger-service/secrets \
+  -maxdepth 1 -type f -exec ls -lh {} +
+```
+
+```bash
+docker volume create tesla_charger_service_data
+docker volume create tesla_charger_service_secrets
+```
+
+```bash
+docker run --rm \
+  -v tesla_charger_service_data:/target \
+  -v /home/yash/tesla-charger-service/data:/source:ro \
+  alpine:3.20 \
+  sh -c 'cp -a /source/. /target/'
+```
+
+```bash
+docker run --rm \
+  -v tesla_charger_service_secrets:/target \
+  -v /home/yash/tesla-charger-service/secrets:/source:ro \
+  alpine:3.20 \
+  sh -c 'cp -a /source/. /target/'
+```
+
+```bash
+docker run --rm \
+  -v tesla_charger_service_data:/data \
+  -v tesla_charger_service_secrets:/secrets \
+  alpine:3.20 \
+  sh -c 'chown -R 10001:10001 /data /secrets && chmod 700 /secrets && find /secrets -type f -exec chmod 600 {} +'
+```
+
+Verify migrated file names and sizes only:
+
+```bash
+docker run --rm \
+  -v tesla_charger_service_data:/target:ro \
+  alpine:3.20 \
+  find /target -maxdepth 1 -type f -exec ls -lh {} +
+```
+
+```bash
+docker run --rm \
+  -v tesla_charger_service_secrets:/target:ro \
+  alpine:3.20 \
+  find /target -maxdepth 1 -type f -exec ls -lh {} +
+```
 
 ## Project structure
 
@@ -125,6 +213,7 @@ bruno/            API collection for manual testing
 ## Security
 
 - Never commit `./secrets/` or `.env` (gitignored by default)
+- Production `data` and `secrets` are stored in Docker named volumes
 - The EC public key is served publicly — that's by design
 - Single-user, personal use only
 
