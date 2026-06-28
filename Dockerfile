@@ -10,6 +10,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/tesla-charger-service
 FROM alpine:3.20
 RUN adduser -D -u 10001 app
 WORKDIR /app
+ENV PORT=80
 
 COPY --from=builder /out/tesla-charger-service /app/tesla-charger-service
 COPY scripts /app/scripts

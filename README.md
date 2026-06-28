@@ -40,7 +40,7 @@ Set in `.env`:
 | `TESLA_VIN`             | yes      |                                                                 |
 | `SHORTCUT_BEARER_TOKEN` | yes      | long random string you make up                                  |
 | `TESLA_BASE_URL`        | yes      | `https://fleet-api.prd.na.vn.cloud.tesla.com` for North America |
-| `PORT`                  | no       | default `5000`                                                  |
+| `PORT`                  | no       | Direct local run override only; default `5000`                  |
 
 
 ## One-time setup
@@ -118,13 +118,13 @@ Production settings:
 
 - Service: `tesla-charger-service`
 - Domain: `fleet.yashjani.com`
-- App port: `5050`
+- App port: `80`
 - Env vars: configured in Dokploy's Compose environment UI and loaded through `.env`
 - Runtime state:
   - `tesla_charger_service_data` mounted at `/app/data`
   - `tesla_charger_service_secrets` mounted at `/app/secrets`
 
-The Compose file intentionally uses `expose` instead of host `ports` so Traefik can route to the container without binding a host port.
+The Compose file intentionally uses `expose` instead of host `ports` so Traefik can route to the container without binding a host port. The container listens on internal HTTP port `80`; other containers can also use internal port `80` without conflict because no host port is published.
 
 Set these values in Dokploy before deploying:
 
@@ -135,8 +135,9 @@ APP_BASE_URL=https://fleet.yashjani.com
 TESLA_VIN
 SHORTCUT_BEARER_TOKEN
 TESLA_BASE_URL
-PORT=5050
 ```
+
+Do not set `PORT` in Dokploy. Compose sets `PORT=80` for the container so the service behaves like a standard HTTP container. The app still supports `PORT` for direct non-Compose local runs.
 
 ### One-time volume migration
 
