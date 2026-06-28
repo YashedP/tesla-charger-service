@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -30,35 +30,35 @@ const privateDirPerm os.FileMode = 0o700
 // @in header
 // @name Authorization
 func main() {
-	logger := log.New(os.Stdout, "", log.LstdFlags|log.LUTC)
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	// Best-effort load for local development. Existing process env vars are preserved.
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
-		logger.Fatalf("load .env file: %v", err)
+		fatal(logger, "load .env file", err)
 	}
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
-		logger.Fatalf("load config: %v", err)
+		fatal(logger, "load config", err)
 	}
 
 	if err := ensureParentDirs(paths.SQLitePath, paths.KeyPath); err != nil {
-		logger.Fatalf("prepare filesystem: %v", err)
+		fatal(logger, "prepare filesystem", err)
 	}
 
 	key, err := crypto.LoadKeyFromFile(paths.KeyPath)
 	if err != nil {
-		logger.Fatalf("load encryption key from %s: %v", paths.KeyPath, err)
+		fatal(logger, "load encryption key", err, slog.String("path", paths.KeyPath))
 	}
 
 	cipher, err := crypto.NewAESCipher(key)
 	if err != nil {
-		logger.Fatalf("initialize encryption cipher: %v", err)
+		fatal(logger, "initialize encryption cipher", err)
 	}
 
 	tokenStore, err := store.NewSQLiteTokenStore(paths.SQLitePath, cipher)
 	if err != nil {
-		logger.Fatalf("initialize token store at %s: %v", paths.SQLitePath, err)
+		fatal(logger, "initialize token store", err, slog.String("path", paths.SQLitePath))
 	}
 	defer func() { _ = tokenStore.Close() }()
 
@@ -85,10 +85,20 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	logger.Printf("starting server on %s", server.Addr)
+	logger.Info("server_starting", slog.String("addr", server.Addr))
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		logger.Fatalf("server failure: %v", err)
+		fatal(logger, "server failure", err)
 	}
+}
+
+func fatal(logger *slog.Logger, msg string, err error, attrs ...slog.Attr) {
+	args := make([]any, 0, 2+len(attrs))
+	args = append(args, slog.String("event", "startup_failed"), slog.String("error", err.Error()))
+	for _, attr := range attrs {
+		args = append(args, attr)
+	}
+	logger.Error(msg, args...)
+	os.Exit(1)
 }
 
 func ensureParentDirs(pathsToPrepare ...string) error {

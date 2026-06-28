@@ -198,6 +198,28 @@ docker run --rm \
   find /target -maxdepth 1 -type f -exec ls -lh {} +
 ```
 
+## Observability
+
+The service writes JSON logs to stdout. The `home_infra` Vector collector reads
+Docker logs, parses JSON messages into structured fields, and ships them to
+VictoriaLogs with Docker metadata such as Compose project, service, container,
+and stream.
+
+Every non-health HTTP request gets a `request_id`, a `request_complete` event,
+and route-specific milestone events. `/v1/is-charging` logs token loading,
+token refresh, Tesla charge-state checks, wake attempts, and the final charging
+decision. Logs intentionally avoid bearer tokens, OAuth codes, access tokens,
+refresh tokens, VIN values, request headers, and raw Tesla response bodies.
+
+Useful VictoriaLogs queries:
+
+```text
+service:tesla-charger-service event:is_charging_complete
+service:tesla-charger-service request_id:<request_id>
+service:tesla-charger-service event:vehicle_wake_failed
+service:tesla-charger-service result:default_charging_true
+```
+
 ## Project structure
 
 ```

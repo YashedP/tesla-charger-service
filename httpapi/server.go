@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -48,10 +48,13 @@ type Server struct {
 	oauthCfg *oauth2.Config
 	tokens   store.TokenStore
 	tesla    tesla.Client
-	logger   *log.Logger
+	logger   *slog.Logger
 }
 
-func NewRouter(cfg config.Config, oauthCfg *oauth2.Config, tokens store.TokenStore, tesla tesla.Client, logger *log.Logger) http.Handler {
+func NewRouter(cfg config.Config, oauthCfg *oauth2.Config, tokens store.TokenStore, tesla tesla.Client, logger *slog.Logger) http.Handler {
+	if logger == nil {
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
 	s := &Server{
 		cfg:      cfg,
 		oauthCfg: oauthCfg,
@@ -61,6 +64,7 @@ func NewRouter(cfg config.Config, oauthCfg *oauth2.Config, tokens store.TokenSto
 	}
 
 	r := chi.NewRouter()
+	r.Use(s.requestLogger)
 	r.Get("/health", s.handleHealth)
 	r.Get("/.well-known/appspecific/com.tesla.3p.public-key.pem", s.handleFleetPublicKey)
 	r.Get("/oauth/start", s.handleOAuthStart)
@@ -93,9 +97,10 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 // @Success 200 {string} string "PEM-encoded EC public key"
 // @Failure 404 {string} string "public key not found"
 // @Router /.well-known/appspecific/com.tesla.3p.public-key.pem [get]
-func (s *Server) handleFleetPublicKey(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleFleetPublicKey(w http.ResponseWriter, r *http.Request) {
 	pem, err := os.ReadFile(paths.FleetECPublicKeyPath)
 	if err != nil {
+		s.log(r, slog.LevelWarn, "fleet_public_key_missing")
 		http.Error(w, "public key not found", http.StatusNotFound)
 		return
 	}
@@ -114,7 +119,7 @@ func (s *Server) handleFleetPublicKey(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleOAuthStart(w http.ResponseWriter, r *http.Request) {
 	state, err := randomState(24)
 	if err != nil {
-		s.logger.Printf("oauth start: generate state: %v", err)
+		s.log(r, slog.LevelError, "oauth_start_failed", slog.String("error", safeError(err)))
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -133,6 +138,7 @@ func (s *Server) handleOAuthStart(w http.ResponseWriter, r *http.Request) {
 		oauth2.AccessTypeOffline,
 		oauth2.SetAuthURLParam("audience", s.cfg.TeslaBaseURL),
 	)
+	s.log(r, slog.LevelInfo, "oauth_start_redirect")
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
@@ -149,21 +155,25 @@ func (s *Server) handleOAuthStart(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 	if state == "" {
+		s.log(r, slog.LevelWarn, "oauth_callback_invalid", slog.String("reason", "missing_state"))
 		http.Error(w, "missing state", http.StatusBadRequest)
 		return
 	}
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
 	if code == "" {
+		s.log(r, slog.LevelWarn, "oauth_callback_invalid", slog.String("reason", "missing_code"))
 		http.Error(w, "missing code", http.StatusBadRequest)
 		return
 	}
 
 	stateCookie, err := r.Cookie(oauthStateCookieName)
 	if err != nil {
+		s.log(r, slog.LevelWarn, "oauth_callback_invalid", slog.String("reason", "missing_state_cookie"))
 		http.Error(w, "missing oauth state cookie", http.StatusBadRequest)
 		return
 	}
 	if !secureEquals(stateCookie.Value, state) {
+		s.log(r, slog.LevelWarn, "oauth_callback_invalid", slog.String("reason", "invalid_state"))
 		http.Error(w, "invalid oauth state", http.StatusBadRequest)
 		return
 	}
@@ -171,18 +181,20 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
 
+	s.log(r, slog.LevelInfo, "oauth_token_exchange_start")
 	tok, err := s.oauthCfg.Exchange(ctx, code, oauth2.SetAuthURLParam("audience", s.cfg.TeslaBaseURL))
 	if err != nil {
-		s.logger.Printf("oauth callback: exchange code: %v", err)
+		s.log(r, slog.LevelError, "oauth_token_exchange_failed", slog.String("error", safeError(err)))
 		http.Error(w, "oauth exchange failed", http.StatusInternalServerError)
 		return
 	}
 
 	if err := s.tokens.SaveToken(ctx, tok); err != nil {
-		s.logger.Printf("oauth callback: save token: %v", err)
+		s.log(r, slog.LevelError, "oauth_token_save_failed", slog.String("error", safeError(err)))
 		http.Error(w, "token persistence failed", http.StatusInternalServerError)
 		return
 	}
+	s.log(r, slog.LevelInfo, "oauth_callback_complete")
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     oauthStateCookieName,
@@ -206,7 +218,9 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 // @Failure 401 {object} ErrorResponse
 // @Router /v1/is-charging [get]
 func (s *Server) handleIsCharging(w http.ResponseWriter, r *http.Request) {
+	s.log(r, slog.LevelInfo, "is_charging_start")
 	if !validBearer(r.Header.Get("Authorization"), s.cfg.ShortcutBearerToken) {
+		s.log(r, slog.LevelWarn, "shortcut_auth_failed")
 		s.writeJSON(w, http.StatusUnauthorized, ErrorResponse{Error: "unauthorized"})
 		return
 	}
@@ -214,19 +228,23 @@ func (s *Server) handleIsCharging(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
 
+	s.log(r, slog.LevelInfo, "token_load_start")
 	tok, err := s.tokens.LoadToken(ctx)
 	if err != nil {
 		if !errors.Is(err, store.ErrTokenNotFound) {
-			s.logger.Printf("is-charging: load token: %v", err)
+			s.log(r, slog.LevelError, "token_load_failed", slog.String("error", safeError(err)), slog.String("result", "not_charging"))
+		} else {
+			s.log(r, slog.LevelWarn, "token_missing", slog.String("result", "not_charging"))
 		}
 		s.writeJSON(w, http.StatusOK, ChargingResponse{IsCharging: false})
 		return
 	}
 
+	s.log(r, slog.LevelInfo, "token_refresh_start")
 	src := s.oauthCfg.TokenSource(ctx, tok)
 	fresh, err := src.Token()
 	if err != nil {
-		s.logger.Printf("is-charging: refresh token: %v", err)
+		s.log(r, slog.LevelError, "token_refresh_failed", slog.String("error", safeError(err)), slog.String("result", "not_charging"))
 		s.writeJSON(w, http.StatusOK, ChargingResponse{IsCharging: false})
 		return
 	}
@@ -236,29 +254,33 @@ func (s *Server) handleIsCharging(w http.ResponseWriter, r *http.Request) {
 	}
 	if tokenChanged(tok, fresh) {
 		if err := s.tokens.SaveToken(ctx, fresh); err != nil {
-			s.logger.Printf("is-charging: save refreshed token: %v", err)
+			s.log(r, slog.LevelError, "token_refreshed_save_failed", slog.String("error", safeError(err)))
+		} else {
+			s.log(r, slog.LevelInfo, "token_refreshed")
 		}
 	}
 
 	httpClient := s.oauthCfg.Client(ctx, fresh)
+	s.log(r, slog.LevelInfo, "tesla_charge_state_start")
 	state, err := s.tesla.GetChargingState(ctx, httpClient, s.cfg.TeslaVIN)
 	if err != nil {
 		if errors.Is(err, tesla.ErrVehicleUnavailable) {
-			s.logger.Printf("is-charging: vehicle asleep, attempting wake")
-			state, err = tesla.WakeAndGetChargingState(ctx, s.tesla, httpClient, s.cfg.TeslaVIN, wakePollInterval)
+			s.log(r, slog.LevelInfo, "vehicle_asleep_wake_start")
+			state, err = tesla.WakeAndGetChargingStateWithObserver(ctx, s.tesla, httpClient, s.cfg.TeslaVIN, wakePollInterval, s.wakeObserver(r))
 			if err != nil {
-				s.logger.Printf("is-charging: wake failed: %v — defaulting to charging=true", err)
+				s.log(r, slog.LevelError, "vehicle_wake_failed", slog.String("error", safeError(err)), slog.String("result", "default_charging_true"))
 				s.writeJSON(w, http.StatusOK, ChargingResponse{IsCharging: true})
 				return
 			}
 		} else {
-			s.logger.Printf("is-charging: tesla status: %v — defaulting to charging=true", err)
+			s.log(r, slog.LevelError, "tesla_charge_state_failed", slog.String("error", safeError(err)), slog.String("result", "default_charging_true"))
 			s.writeJSON(w, http.StatusOK, ChargingResponse{IsCharging: true})
 			return
 		}
 	}
 
 	isCharging := strings.EqualFold(state, "Charging") || strings.EqualFold(state, "Complete")
+	s.log(r, slog.LevelInfo, "is_charging_complete", slog.String("tesla_state", state), slog.Bool("is_charging", isCharging), slog.String("result", "ok"))
 	s.writeJSON(w, http.StatusOK, ChargingResponse{IsCharging: isCharging})
 }
 
@@ -266,7 +288,7 @@ func (s *Server) writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		s.logger.Printf("writeJSON: %v", err)
+		s.logger.Error("write_json_failed", slog.String("event", "write_json_failed"), slog.String("error", safeError(err)))
 	}
 }
 

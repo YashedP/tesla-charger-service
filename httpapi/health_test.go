@@ -2,7 +2,7 @@ package httpapi
 
 import (
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,7 +16,7 @@ func TestHealth(t *testing.T) {
 		nil,
 		nil,
 		nil,
-		log.New(io.Discard, "", 0),
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
