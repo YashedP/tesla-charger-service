@@ -77,6 +77,28 @@ func TestIsChargingLogsUnauthorized(t *testing.T) {
 	assertSharedRequestID(t, events)
 }
 
+func TestRequestLoggerDumpsSanitizedHeaders(t *testing.T) {
+	events, rec := exerciseIsChargingWithHeaders(t, &mockTokenStore{}, &mockTeslaClient{}, http.Header{
+		"Authorization":    {"Bearer wrong-token"},
+		"CF-Connecting-IP": {"203.0.113.10"},
+		"X-Debug-Token":    {"debug-token"},
+	})
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+
+	received := assertEvent(t, events, "request_received")
+	headers, ok := received["headers"].(map[string]any)
+	if !ok {
+		t.Fatalf("headers = %#v, want object", received["headers"])
+	}
+
+	assertHeaderValues(t, headers, http.CanonicalHeaderKey("Authorization"), []string{"REDACTED"})
+	assertHeaderValues(t, headers, http.CanonicalHeaderKey("CF-Connecting-IP"), []string{"203.0.113.10"})
+	assertHeaderValues(t, headers, http.CanonicalHeaderKey("X-Debug-Token"), []string{"REDACTED"})
+}
+
 func TestIsChargingLogsTokenMissing(t *testing.T) {
 	events, rec := exerciseIsCharging(t, &mockTokenStore{loadErr: store.ErrTokenNotFound}, &mockTeslaClient{}, "Bearer test-token")
 
@@ -145,6 +167,16 @@ func TestIsChargingLogsWakeFailure(t *testing.T) {
 func exerciseIsCharging(t *testing.T, tokens store.TokenStore, teslaClient tesla.Client, authHeader string) ([]map[string]any, *httptest.ResponseRecorder) {
 	t.Helper()
 
+	headers := http.Header{}
+	if authHeader != "" {
+		headers.Set("Authorization", authHeader)
+	}
+	return exerciseIsChargingWithHeaders(t, tokens, teslaClient, headers)
+}
+
+func exerciseIsChargingWithHeaders(t *testing.T, tokens store.TokenStore, teslaClient tesla.Client, headers http.Header) ([]map[string]any, *httptest.ResponseRecorder) {
+	t.Helper()
+
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	router := NewRouter(config.Config{
@@ -153,8 +185,10 @@ func exerciseIsCharging(t *testing.T, tokens store.TokenStore, teslaClient tesla
 	}, &oauth2.Config{}, tokens, teslaClient, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/is-charging", nil)
-	if authHeader != "" {
-		req.Header.Set("Authorization", authHeader)
+	for key, values := range headers {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
 	}
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -187,6 +221,27 @@ func parseLogEvents(t *testing.T, raw []byte) []map[string]any {
 		events = append(events, event)
 	}
 	return events
+}
+
+func assertHeaderValues(t *testing.T, headers map[string]any, key string, want []string) {
+	t.Helper()
+
+	rawValues, ok := headers[key].([]any)
+	if !ok {
+		t.Fatalf("headers[%q] = %#v, want array", key, headers[key])
+	}
+	if len(rawValues) != len(want) {
+		t.Fatalf("headers[%q] len = %d, want %d", key, len(rawValues), len(want))
+	}
+	for i, rawValue := range rawValues {
+		value, ok := rawValue.(string)
+		if !ok {
+			t.Fatalf("headers[%q][%d] = %#v, want string", key, i, rawValue)
+		}
+		if value != want[i] {
+			t.Fatalf("headers[%q][%d] = %q, want %q", key, i, value, want[i])
+		}
+	}
 }
 
 func assertEvent(t *testing.T, events []map[string]any, name string) map[string]any {
