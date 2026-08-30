@@ -2,14 +2,14 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"log/slog"
 
-	"tesla-charger-service/internal/tesla"
+	"golang.org/x/oauth2"
 )
 
 type requestIDContextKey struct{}
@@ -37,20 +37,10 @@ func (s *Server) requestLogger(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), requestIDContextKey{}, requestID)
 		r = r.WithContext(ctx)
 
-		s.logger.InfoContext(
-			ctx,
-			"request_received",
-			slog.String("event", "request_received"),
-			slog.String("request_id", requestID),
-			slog.String("method", r.Method),
-			slog.String("route", r.URL.Path),
-			slog.String("host", r.Host),
-			slog.String("remote_addr", r.RemoteAddr),
-			slog.String("request_uri", r.RequestURI),
-			slog.String("proto", r.Proto),
-			slog.Bool("tls", r.TLS != nil),
-			slog.Any("headers", sanitizeHeaders(r.Header)),
-		)
+		if r.URL.Path != "/health" {
+			s.logger.InfoContext(ctx, "request_received", "event", "request_received",
+				"request_id", requestID, "method", r.Method, "route", r.URL.Path)
+		}
 
 		rec := &statusRecorder{ResponseWriter: w}
 		start := time.Now()
@@ -74,33 +64,6 @@ func (s *Server) requestLogger(next http.Handler) http.Handler {
 			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
 		)
 	})
-}
-
-func sanitizeHeaders(headers http.Header) map[string][]string {
-	sanitized := make(map[string][]string, len(headers))
-	for key, values := range headers {
-		if isSensitiveHeader(key) {
-			sanitized[key] = []string{"REDACTED"}
-			continue
-		}
-
-		copied := make([]string, len(values))
-		copy(copied, values)
-		sanitized[key] = copied
-	}
-	return sanitized
-}
-
-func isSensitiveHeader(key string) bool {
-	normalized := strings.ToLower(key)
-	if normalized == "authorization" || normalized == "cookie" || normalized == "set-cookie" {
-		return true
-	}
-
-	return strings.Contains(normalized, "token") ||
-		strings.Contains(normalized, "secret") ||
-		strings.Contains(normalized, "key") ||
-		strings.Contains(normalized, "credential")
 }
 
 func requestID(r *http.Request) string {
@@ -136,36 +99,20 @@ func (s *Server) log(r *http.Request, level slog.Level, event string, attrs ...s
 	s.logger.Log(ctx, level, event, args...)
 }
 
-func (s *Server) wakeObserver(r *http.Request) tesla.WakeObserver {
-	return func(event tesla.WakeEvent) {
-		attrs := []slog.Attr{}
-		if event.Attempt > 0 {
-			attrs = append(attrs, slog.Int("attempt", event.Attempt))
-		}
-		if event.State != "" {
-			attrs = append(attrs, slog.String("vehicle_state", event.State))
-		}
-		if event.Err != nil {
-			attrs = append(attrs, slog.String("error", safeError(event.Err)))
-		}
-
-		level := slog.LevelInfo
-		if event.Err != nil {
-			level = slog.LevelWarn
-		}
-		s.log(r, level, event.Event, attrs...)
-	}
-}
-
+// safeError deliberately excludes provider error strings and response bodies.
 func safeError(err error) string {
 	if err == nil {
 		return ""
 	}
-	msg := err.Error()
-	for _, marker := range []string{" body=", " body:"} {
-		if idx := strings.Index(msg, marker); idx >= 0 {
-			return strings.TrimSpace(msg[:idx])
-		}
+	if errors.Is(err, context.Canceled) {
+		return "canceled"
 	}
-	return msg
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	var oauthErr *oauth2.RetrieveError
+	if errors.As(err, &oauthErr) {
+		return "oauth_failed"
+	}
+	return "operation_failed"
 }

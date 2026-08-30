@@ -1,12 +1,15 @@
 PYTHON ?= python3
 GO ?= go
-SWAG ?= swag
+GO_IMAGE := golang:1.24-alpine
+LINT_IMAGE := golangci/golangci-lint:v2.4.0
+CONTAINER_ARGS := --rm -v "$(CURDIR):/src" -v tesla_go_modules:/go/pkg/mod -v tesla_go_build:/root/.cache/go-build -w /src
 KEY_PATH ?= ./secrets/token_enc_key.b64
 SERVICE_NAME := tesla-charger.service
 SYSTEMD_UNIT := deploy/systemd/$(SERVICE_NAME)
 INSTALLED_UNIT := /etc/systemd/system/$(SERVICE_NAME)
 
-.PHONY: help setup install run run-native start stop restart status logs uninstall key-generate key-generate-force key-validate key-scripts docs lint fleet-keygen fleet-register shortcut
+.PHONY: help setup install run run-native start stop restart status logs uninstall key-generate key-generate-force key-validate key-scripts docs lint fleet-keygen fleet-register
+.PHONY: test verify
 
 help:
 	@echo "Available targets:"
@@ -24,9 +27,10 @@ help:
 	@echo "  make key-validate        # Validate key file at $(KEY_PATH)"
 	@echo "  make docs                # Generate Swagger docs"
 	@echo "  make lint                # Run golangci-lint"
+	@echo "  make test                # Run tests in Docker"
+	@echo "  make verify              # Run complete containerized verification"
 	@echo "  make fleet-keygen        # Generate EC key pair for Fleet API partner registration"
 	@echo "  make fleet-register      # Register as Tesla Fleet API partner"
-	@echo "  make shortcut            # Compile Apple Shortcut from Cherri source"
 
 setup:
 	@command -v docker >/dev/null || { echo "docker is required"; exit 1; }
@@ -83,10 +87,20 @@ key-validate:
 key-scripts: key-generate key-validate
 
 docs:
-	$(SWAG) init -g cmd/server/main.go -o docs
+	docker run $(CONTAINER_ARGS) $(GO_IMAGE) go run github.com/swaggo/swag/cmd/swag@v1.16.6 init -g main.go -d cmd/server,httpapi -o docs
 
 lint:
-	$(shell $(GO) env GOPATH)/bin/golangci-lint run ./...
+	docker run $(CONTAINER_ARGS) $(LINT_IMAGE) golangci-lint run ./...
+
+test:
+	docker run $(CONTAINER_ARGS) $(GO_IMAGE) go test -timeout 2m ./...
+
+verify: test lint
+	docker run $(CONTAINER_ARGS) $(GO_IMAGE) sh -c 'test -z "$$(gofmt -l cmd httpapi internal)" && go vet ./...'
+	docker run $(CONTAINER_ARGS) $(LINT_IMAGE) go test -race -timeout 2m ./...
+	docker run $(CONTAINER_ARGS) $(GO_IMAGE) sh -c 'sha256sum docs/docs.go docs/swagger.json docs/swagger.yaml > /tmp/swagger.sha256 && go run github.com/swaggo/swag/cmd/swag@v1.16.6 init -g main.go -d cmd/server,httpapi -o docs && sha256sum -c /tmp/swagger.sha256'
+	docker compose --env-file .env.example config --no-env-resolution --quiet
+	docker build -t tesla-charger-service .
 
 fleet-keygen:
 	@mkdir -p ./secrets
@@ -100,15 +114,3 @@ ifndef DOMAIN
 	$(error DOMAIN is required. Usage: make fleet-register DOMAIN=your-domain.com)
 endif
 	$(PYTHON) scripts/register_partner.py --domain $(DOMAIN)
-
-shortcut: ## Compile Apple Shortcut from Cherri source
-	@test -f .env || { echo "Error: .env file not found. Copy .env.example and fill in values."; exit 1; }
-	@. ./.env && \
-		case "$$APP_BASE_URL" in http://*|https://*) ;; *) APP_BASE_URL="https://$$APP_BASE_URL" ;; esac && \
-		sed \
-		-e "s|__APP_BASE_URL__|$$APP_BASE_URL|g" \
-		-e "s|__SHORTCUT_BEARER_TOKEN__|$$SHORTCUT_BEARER_TOKEN|g" \
-		shortcuts/charging-alarm.cherri > shortcuts/.charging-alarm.generated.cherri
-	cherri shortcuts/.charging-alarm.generated.cherri
-	@rm -f shortcuts/.charging-alarm.generated.cherri
-	@echo "Built: shortcuts/Tesla Charging Check.shortcut"

@@ -89,7 +89,7 @@ func TestGetChargingStateAPIError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "tesla error=") {
+	if !strings.Contains(err.Error(), "tesla api error response") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

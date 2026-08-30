@@ -5,8 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -21,8 +19,6 @@ import (
 
 	"tesla-charger-service/internal/config"
 	"tesla-charger-service/internal/paths"
-	"tesla-charger-service/internal/store"
-	"tesla-charger-service/internal/tesla"
 
 	_ "tesla-charger-service/docs"
 )
@@ -30,28 +26,20 @@ import (
 const (
 	oauthStateCookieName = "oauth_state"
 	requestTimeout       = 45 * time.Second
-	wakePollInterval     = 2 * time.Second
 )
-
-// ChargingResponse represents the /v1/is-charging response.
-type ChargingResponse struct {
-	IsCharging bool `json:"is_charging"`
-}
-
-// ErrorResponse represents an API error.
-type ErrorResponse struct {
-	Error string `json:"error"`
-}
 
 type Server struct {
 	cfg      config.Config
 	oauthCfg *oauth2.Config
-	tokens   store.TokenStore
-	tesla    tesla.Client
+	tokens   tokenExchanger
 	logger   *slog.Logger
 }
 
-func NewRouter(cfg config.Config, oauthCfg *oauth2.Config, tokens store.TokenStore, tesla tesla.Client, logger *slog.Logger) http.Handler {
+type tokenExchanger interface {
+	Exchange(context.Context, string, string) error
+}
+
+func NewRouter(cfg config.Config, oauthCfg *oauth2.Config, tokens tokenExchanger, logger *slog.Logger) http.Handler {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
@@ -59,7 +47,6 @@ func NewRouter(cfg config.Config, oauthCfg *oauth2.Config, tokens store.TokenSto
 		cfg:      cfg,
 		oauthCfg: oauthCfg,
 		tokens:   tokens,
-		tesla:    tesla,
 		logger:   logger,
 	}
 
@@ -69,7 +56,6 @@ func NewRouter(cfg config.Config, oauthCfg *oauth2.Config, tokens store.TokenSto
 	r.Get("/.well-known/appspecific/com.tesla.3p.public-key.pem", s.handleFleetPublicKey)
 	r.Get("/oauth/start", s.handleOAuthStart)
 	r.Get("/oauth/callback", s.handleOAuthCallback)
-	r.Get("/v1/is-charging", s.handleIsCharging)
 	r.Get("/docs", http.RedirectHandler("/docs/", http.StatusMovedPermanently).ServeHTTP)
 	r.Get("/docs/*", httpSwagger.Handler(
 		httpSwagger.URL("/docs/doc.json"),
@@ -182,18 +168,12 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	s.log(r, slog.LevelInfo, "oauth_token_exchange_start")
-	tok, err := s.oauthCfg.Exchange(ctx, code, oauth2.SetAuthURLParam("audience", s.cfg.TeslaBaseURL))
-	if err != nil {
+	if err := s.tokens.Exchange(ctx, code, s.cfg.TeslaBaseURL); err != nil {
 		s.log(r, slog.LevelError, "oauth_token_exchange_failed", slog.String("error", safeError(err)))
 		http.Error(w, "oauth exchange failed", http.StatusInternalServerError)
 		return
 	}
 
-	if err := s.tokens.SaveToken(ctx, tok); err != nil {
-		s.log(r, slog.LevelError, "oauth_token_save_failed", slog.String("error", safeError(err)))
-		http.Error(w, "token persistence failed", http.StatusInternalServerError)
-		return
-	}
 	s.log(r, slog.LevelInfo, "oauth_callback_complete")
 
 	http.SetCookie(w, &http.Cookie{
@@ -206,101 +186,7 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	})
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = io.WriteString(w, "OAuth successful. You can now call /v1/is-charging.\n")
-}
-
-// @Summary Check if vehicle is charging
-// @Description Returns whether the configured Tesla vehicle is currently charging. Wakes the vehicle if asleep. Defaults to is_charging=true on unrecoverable errors (safe default to prevent false alarms).
-// @Tags charging
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} ChargingResponse
-// @Failure 401 {object} ErrorResponse
-// @Router /v1/is-charging [get]
-func (s *Server) handleIsCharging(w http.ResponseWriter, r *http.Request) {
-	s.log(r, slog.LevelInfo, "is_charging_start")
-	if !validBearer(r.Header.Get("Authorization"), s.cfg.ShortcutBearerToken) {
-		s.log(r, slog.LevelWarn, "shortcut_auth_failed")
-		s.writeJSON(w, http.StatusUnauthorized, ErrorResponse{Error: "unauthorized"})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
-	defer cancel()
-
-	s.log(r, slog.LevelInfo, "token_load_start")
-	tok, err := s.tokens.LoadToken(ctx)
-	if err != nil {
-		if !errors.Is(err, store.ErrTokenNotFound) {
-			s.log(r, slog.LevelError, "token_load_failed", slog.String("error", safeError(err)), slog.String("result", "not_charging"))
-		} else {
-			s.log(r, slog.LevelWarn, "token_missing", slog.String("result", "not_charging"))
-		}
-		s.writeJSON(w, http.StatusOK, ChargingResponse{IsCharging: false})
-		return
-	}
-
-	s.log(r, slog.LevelInfo, "token_refresh_start")
-	src := s.oauthCfg.TokenSource(ctx, tok)
-	fresh, err := src.Token()
-	if err != nil {
-		s.log(r, slog.LevelError, "token_refresh_failed", slog.String("error", safeError(err)), slog.String("result", "not_charging"))
-		s.writeJSON(w, http.StatusOK, ChargingResponse{IsCharging: false})
-		return
-	}
-
-	if fresh.RefreshToken == "" {
-		fresh.RefreshToken = tok.RefreshToken
-	}
-	if tokenChanged(tok, fresh) {
-		if err := s.tokens.SaveToken(ctx, fresh); err != nil {
-			s.log(r, slog.LevelError, "token_refreshed_save_failed", slog.String("error", safeError(err)))
-		} else {
-			s.log(r, slog.LevelInfo, "token_refreshed")
-		}
-	}
-
-	httpClient := s.oauthCfg.Client(ctx, fresh)
-	s.log(r, slog.LevelInfo, "tesla_charge_state_start")
-	state, err := s.tesla.GetChargingState(ctx, httpClient, s.cfg.TeslaVIN)
-	if err != nil {
-		if errors.Is(err, tesla.ErrVehicleUnavailable) {
-			s.log(r, slog.LevelInfo, "vehicle_asleep_wake_start")
-			state, err = tesla.WakeAndGetChargingStateWithObserver(ctx, s.tesla, httpClient, s.cfg.TeslaVIN, wakePollInterval, s.wakeObserver(r))
-			if err != nil {
-				s.log(r, slog.LevelError, "vehicle_wake_failed", slog.String("error", safeError(err)), slog.String("result", "default_charging_true"))
-				s.writeJSON(w, http.StatusOK, ChargingResponse{IsCharging: true})
-				return
-			}
-		} else {
-			s.log(r, slog.LevelError, "tesla_charge_state_failed", slog.String("error", safeError(err)), slog.String("result", "default_charging_true"))
-			s.writeJSON(w, http.StatusOK, ChargingResponse{IsCharging: true})
-			return
-		}
-	}
-
-	isCharging := strings.EqualFold(state, "Charging") || strings.EqualFold(state, "Complete")
-	s.log(r, slog.LevelInfo, "is_charging_complete", slog.String("tesla_state", state), slog.Bool("is_charging", isCharging), slog.String("result", "ok"))
-	s.writeJSON(w, http.StatusOK, ChargingResponse{IsCharging: isCharging})
-}
-
-func (s *Server) writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		s.logger.Error("write_json_failed", slog.String("event", "write_json_failed"), slog.String("error", safeError(err)))
-	}
-}
-
-func validBearer(header string, expectedToken string) bool {
-	const bearerPrefix = "bearer "
-
-	header = strings.TrimSpace(header)
-	if len(header) < len(bearerPrefix) || !strings.EqualFold(header[:len(bearerPrefix)], bearerPrefix) {
-		return false
-	}
-	provided := strings.TrimSpace(header[len(bearerPrefix):])
-	return secureEquals(provided, expectedToken)
+	_, _ = io.WriteString(w, "OAuth successful. Nightly charging checks are ready.\n")
 }
 
 func secureEquals(a string, b string) bool {
@@ -316,14 +202,4 @@ func randomState(size int) (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(buf), nil
-}
-
-func tokenChanged(oldTok *oauth2.Token, newTok *oauth2.Token) bool {
-	if oldTok == nil || newTok == nil {
-		return true
-	}
-	return oldTok.AccessToken != newTok.AccessToken ||
-		oldTok.RefreshToken != newTok.RefreshToken ||
-		oldTok.TokenType != newTok.TokenType ||
-		!oldTok.Expiry.Equal(newTok.Expiry)
 }

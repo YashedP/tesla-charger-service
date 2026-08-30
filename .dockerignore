@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+!.env.example
+secrets
+data
+.agent
+*.shortcut
+*.generated.cherri
+*.out
+*.test
+.DS_Store

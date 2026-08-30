@@ -35,18 +35,20 @@ type TokenStore interface {
 	SaveToken(ctx context.Context, token *oauth2.Token) error
 }
 
-type SQLiteTokenStore struct {
+type SQLiteStore struct {
 	db     *sql.DB
 	cipher StringCipher
 }
 
-func NewSQLiteTokenStore(dbPath string, cipher StringCipher) (*SQLiteTokenStore, error) {
+func NewSQLiteStore(dbPath string, cipher StringCipher) (*SQLiteStore, error) {
 	db, err := sql.Open(sqliteDriverName, dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite db: %w", err)
 	}
 
-	store := &SQLiteTokenStore{db: db, cipher: cipher}
+	// Serialize the small personal service's DB operations without SQLite lock races.
+	db.SetMaxOpenConns(1)
+	store := &SQLiteStore{db: db, cipher: cipher}
 	if err := store.migrate(context.Background()); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -55,14 +57,17 @@ func NewSQLiteTokenStore(dbPath string, cipher StringCipher) (*SQLiteTokenStore,
 	return store, nil
 }
 
-func (s *SQLiteTokenStore) migrate(ctx context.Context) error {
+func (s *SQLiteStore) migrate(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, migrateSQL); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, chargingRunsSQL); err != nil {
+		return fmt.Errorf("migrate charging runs: %w", err)
 	}
 	return nil
 }
 
-func (s *SQLiteTokenStore) SaveToken(ctx context.Context, token *oauth2.Token) error {
+func (s *SQLiteStore) SaveToken(ctx context.Context, token *oauth2.Token) error {
 	if token == nil {
 		return errors.New("token is nil")
 	}
@@ -98,7 +103,7 @@ func (s *SQLiteTokenStore) SaveToken(ctx context.Context, token *oauth2.Token) e
 	return nil
 }
 
-func (s *SQLiteTokenStore) LoadToken(ctx context.Context) (*oauth2.Token, error) {
+func (s *SQLiteStore) LoadToken(ctx context.Context) (*oauth2.Token, error) {
 	var accessEnc, refreshEnc, typeEnc string
 	var expiryUnix int64
 
@@ -134,7 +139,7 @@ func (s *SQLiteTokenStore) LoadToken(ctx context.Context) (*oauth2.Token, error)
 	return token, nil
 }
 
-func (s *SQLiteTokenStore) Close() error {
+func (s *SQLiteStore) Close() error {
 	if s.db == nil {
 		return nil
 	}

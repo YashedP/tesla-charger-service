@@ -1,20 +1,10 @@
 basePath: /
-definitions:
-  httpapi.ChargingResponse:
-    properties:
-      is_charging:
-        type: boolean
-    type: object
-  httpapi.ErrorResponse:
-    properties:
-      error:
-        type: string
-    type: object
 host: localhost:5000
 info:
   contact: {}
-  description: Service that wraps the Tesla Fleet API to report vehicle charging state.
-  title: Tesla Charger Status API
+  description: Nightly charging monitor. HTTP endpoints support Tesla OAuth, Fleet
+    registration, and health checks.
+  title: Tesla Charging Monitor
   version: "1.0"
 paths:
   /.well-known/appspecific/com.tesla.3p.public-key.pem:
@@ -99,30 +89,4 @@ paths:
       summary: Start Tesla OAuth flow
       tags:
       - oauth
-  /v1/is-charging:
-    get:
-      description: Returns whether the configured Tesla vehicle is currently charging.
-        Wakes the vehicle if asleep. Defaults to is_charging=true on unrecoverable
-        errors (safe default to prevent false alarms).
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/httpapi.ChargingResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/httpapi.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: Check if vehicle is charging
-      tags:
-      - charging
-securityDefinitions:
-  BearerAuth:
-    in: header
-    name: Authorization
-    type: apiKey
 swagger: "2.0"

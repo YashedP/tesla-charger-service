@@ -1,8 +1,8 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "Service that wraps the Tesla Fleet API to report vehicle charging state.",
-        "title": "Tesla Charger Status API",
+        "description": "Nightly charging monitor. HTTP endpoints support Tesla OAuth, Fleet registration, and health checks.",
+        "title": "Tesla Charging Monitor",
         "contact": {},
         "version": "1.0"
     },
@@ -128,62 +128,6 @@
                     }
                 }
             }
-        },
-        "/v1/is-charging": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Returns whether the configured Tesla vehicle is currently charging. Wakes the vehicle if asleep. Defaults to is_charging=true on unrecoverable errors (safe default to prevent false alarms).",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "charging"
-                ],
-                "summary": "Check if vehicle is charging",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.ChargingResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        }
-    },
-    "definitions": {
-        "httpapi.ChargingResponse": {
-            "type": "object",
-            "properties": {
-                "is_charging": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "httpapi.ErrorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string"
-                }
-            }
-        }
-    },
-    "securityDefinitions": {
-        "BearerAuth": {
-            "type": "apiKey",
-            "name": "Authorization",
-            "in": "header"
         }
     }
 }
