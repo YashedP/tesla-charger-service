@@ -38,10 +38,6 @@ data/*
 secrets/*
 !secrets/.gitkeep
 
-# Compiled Apple Shortcuts
-*.shortcut
-*.generated.cherri
-
 # Agent artifacts
 .agent/
 

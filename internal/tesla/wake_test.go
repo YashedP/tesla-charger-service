@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// mockClient implements Client for testing WakeAndGetChargingState.
+// mockClient implements Client for testing wake orchestration.
 type mockClient struct {
 	wakeErr       error
 	states        []string // returned in order by GetVehicleState
@@ -43,7 +43,7 @@ func TestWakeAndGetChargingStateSuccess(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	state, err := WakeAndGetChargingState(ctx, mc, http.DefaultClient, "5YJ123", 10*time.Millisecond)
+	state, err := WakeAndGetChargingStateWithObserver(ctx, mc, http.DefaultClient, "5YJ123", 10*time.Millisecond, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestWakeAndGetChargingStateWakeFails(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := WakeAndGetChargingState(ctx, mc, http.DefaultClient, "5YJ123", 10*time.Millisecond)
+	_, err := WakeAndGetChargingStateWithObserver(ctx, mc, http.DefaultClient, "5YJ123", 10*time.Millisecond, nil)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
@@ -74,7 +74,7 @@ func TestWakeAndGetChargingStateTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	_, err := WakeAndGetChargingState(ctx, mc, http.DefaultClient, "5YJ123", 10*time.Millisecond)
+	_, err := WakeAndGetChargingStateWithObserver(ctx, mc, http.DefaultClient, "5YJ123", 10*time.Millisecond, nil)
 	if err == nil {
 		t.Fatalf("expected timeout error, got nil")
 	}

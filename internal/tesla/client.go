@@ -51,14 +51,13 @@ func (c *FleetClient) GetChargingState(ctx context.Context, httpClient *http.Cli
 
 	if resp.StatusCode() >= http.StatusMultipleChoices {
 		return "", fmt.Errorf(
-			"tesla api status=%d body=%q",
+			"tesla api status=%d",
 			resp.StatusCode(),
-			strings.TrimSpace(string(resp.Body())),
 		)
 	}
 
 	if payload.Error != "" {
-		return "", fmt.Errorf("tesla error=%q description=%q", payload.Error, payload.ErrorDescription)
+		return "", errors.New("tesla api error response")
 	}
 
 	state := strings.TrimSpace(payload.Response.ChargeState.ChargingState)
@@ -71,6 +70,8 @@ func (c *FleetClient) GetChargingState(ctx context.Context, httpClient *http.Cli
 
 func (c *FleetClient) newRequestClient(httpClient *http.Client) *resty.Client {
 	client := resty.NewWithClient(httpClient)
+	// Retry diagnostics can contain the VIN URL. The checker emits safe events.
+	client.SetLogger(discardLogger{})
 	client.SetBaseURL(c.baseURL)
 	client.SetHeader("Accept", defaultAcceptHeader)
 	client.SetHeader("User-Agent", defaultUserAgent)
@@ -103,9 +104,8 @@ func (c *FleetClient) WakeUp(ctx context.Context, httpClient *http.Client, vin s
 
 	if resp.StatusCode() >= http.StatusMultipleChoices {
 		return fmt.Errorf(
-			"wake_up status=%d body=%q",
+			"wake_up status=%d",
 			resp.StatusCode(),
-			strings.TrimSpace(string(resp.Body())),
 		)
 	}
 
@@ -127,9 +127,8 @@ func (c *FleetClient) GetVehicleState(ctx context.Context, httpClient *http.Clie
 
 	if resp.StatusCode() >= http.StatusMultipleChoices {
 		return "", fmt.Errorf(
-			"vehicle state status=%d body=%q",
+			"vehicle state status=%d",
 			resp.StatusCode(),
-			strings.TrimSpace(string(resp.Body())),
 		)
 	}
 
@@ -153,6 +152,12 @@ type vehicleDataPayload struct {
 			ChargingState string `json:"charging_state"`
 		} `json:"charge_state"`
 	} `json:"response"`
-	Error            string `json:"error"`
-	ErrorDescription string `json:"error_description"`
+	Error string `json:"error"`
 }
+
+// discardLogger prevents Resty from independently logging sensitive request URLs.
+type discardLogger struct{}
+
+func (discardLogger) Errorf(string, ...interface{}) {}
+func (discardLogger) Warnf(string, ...interface{})  {}
+func (discardLogger) Debugf(string, ...interface{}) {}

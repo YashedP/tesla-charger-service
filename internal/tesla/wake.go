@@ -23,13 +23,9 @@ type WakeEvent struct {
 
 type WakeObserver func(WakeEvent)
 
-// WakeAndGetChargingState sends a wake command, polls until the vehicle is
+// WakeAndGetChargingStateWithObserver sends a wake command, polls until the vehicle is
 // online, then queries charging state. The caller should set a deadline on ctx
 // to bound the total wait time.
-func WakeAndGetChargingState(ctx context.Context, client Client, httpClient *http.Client, vin string, pollInterval time.Duration) (string, error) {
-	return WakeAndGetChargingStateWithObserver(ctx, client, httpClient, vin, pollInterval, nil)
-}
-
 func WakeAndGetChargingStateWithObserver(ctx context.Context, client Client, httpClient *http.Client, vin string, pollInterval time.Duration, observer WakeObserver) (string, error) {
 	observe := func(event WakeEvent) {
 		if observer != nil {

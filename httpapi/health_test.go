@@ -15,7 +15,6 @@ func TestHealth(t *testing.T) {
 		config.Config{},
 		nil,
 		nil,
-		nil,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 
