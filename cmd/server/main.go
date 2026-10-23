@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"tesla-charger-service/internal/telemetry"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -36,6 +41,14 @@ func main() {
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
 		fatal(logger, "load .env file", err)
 	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	shutdownTelemetry, err := telemetry.Init(ctx, "tesla-charger-service")
+	if err != nil {
+		fatal(logger, "initialize telemetry", err)
+	}
+	defer shutdownTelemetry()
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -85,9 +98,23 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
+	shutdownDone := make(chan struct{})
+	go func() {
+		defer close(shutdownDone)
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			logger.Error("server_shutdown_failed")
+		}
+	}()
+
 	logger.Info("server_starting", slog.String("addr", server.Addr))
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		fatal(logger, "server failure", err)
+	}
+	if ctx.Err() != nil {
+		<-shutdownDone
 	}
 }
 

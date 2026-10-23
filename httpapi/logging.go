@@ -9,6 +9,8 @@ import (
 
 	"log/slog"
 
+	"golang.org/x/oauth2"
+	"tesla-charger-service/internal/telemetry"
 	"tesla-charger-service/internal/tesla"
 )
 
@@ -35,28 +37,14 @@ func (s *Server) requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestID := newRequestID()
 		ctx := context.WithValue(r.Context(), requestIDContextKey{}, requestID)
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, &http.Client{Transport: telemetry.Transport{}})
 		r = r.WithContext(ctx)
-
-		s.logger.InfoContext(
-			ctx,
-			"request_received",
-			slog.String("event", "request_received"),
-			slog.String("request_id", requestID),
-			slog.String("method", r.Method),
-			slog.String("route", r.URL.Path),
-			slog.String("host", r.Host),
-			slog.String("remote_addr", r.RemoteAddr),
-			slog.String("request_uri", r.RequestURI),
-			slog.String("proto", r.Proto),
-			slog.Bool("tls", r.TLS != nil),
-			slog.Any("headers", sanitizeHeaders(r.Header)),
-		)
 
 		rec := &statusRecorder{ResponseWriter: w}
 		start := time.Now()
 		next.ServeHTTP(rec, r)
 
-		if r.URL.Path == "/health" {
+		if r.URL.Path == "/health" && rec.status < http.StatusBadRequest {
 			return
 		}
 		status := rec.status
@@ -64,7 +52,7 @@ func (s *Server) requestLogger(next http.Handler) http.Handler {
 			status = http.StatusOK
 		}
 
-		s.logger.Info(
+		s.logger.InfoContext(ctx,
 			"request_complete",
 			slog.String("event", "request_complete"),
 			slog.String("request_id", requestID),
@@ -74,33 +62,6 @@ func (s *Server) requestLogger(next http.Handler) http.Handler {
 			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
 		)
 	})
-}
-
-func sanitizeHeaders(headers http.Header) map[string][]string {
-	sanitized := make(map[string][]string, len(headers))
-	for key, values := range headers {
-		if isSensitiveHeader(key) {
-			sanitized[key] = []string{"REDACTED"}
-			continue
-		}
-
-		copied := make([]string, len(values))
-		copy(copied, values)
-		sanitized[key] = copied
-	}
-	return sanitized
-}
-
-func isSensitiveHeader(key string) bool {
-	normalized := strings.ToLower(key)
-	if normalized == "authorization" || normalized == "cookie" || normalized == "set-cookie" {
-		return true
-	}
-
-	return strings.Contains(normalized, "token") ||
-		strings.Contains(normalized, "secret") ||
-		strings.Contains(normalized, "key") ||
-		strings.Contains(normalized, "credential")
 }
 
 func requestID(r *http.Request) string {

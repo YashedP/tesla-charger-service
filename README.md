@@ -250,3 +250,7 @@ bruno/            API collection for manual testing
 | OAuth callback fails                   | `APP_BASE_URL/oauth/callback` must match Tesla app config exactly           |
 | Always returns `false`                 | Check OAuth completed, VIN is correct, `TESLA_BASE_URL` matches your region |
 
+
+## Observability
+
+See the [observability deployment runbook](docs/guides/observability.md) for OTLP tracing, log correlation, verification, and rollback.
