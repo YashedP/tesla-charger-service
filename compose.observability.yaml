@@ -1,0 +1,17 @@
+# Opt-in server deployment overlay; local development keeps compose.yaml alone.
+services:
+  tesla-charger-service:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://home-otel-collector:4318
+      OTEL_SERVICE_NAME: tesla-charger-service
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=production,service.version=${SERVICE_VERSION:?Set SERVICE_VERSION to the deployed commit}
+      OTEL_TRACES_SAMPLER: parentbased_always_on
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+    networks: [default, dokploy]
+networks:
+  default: {}
+  dokploy:
+    external: true
+    name: dokploy-network

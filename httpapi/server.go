@@ -22,6 +22,7 @@ import (
 	"tesla-charger-service/internal/config"
 	"tesla-charger-service/internal/paths"
 	"tesla-charger-service/internal/store"
+	"tesla-charger-service/internal/telemetry"
 	"tesla-charger-service/internal/tesla"
 
 	_ "tesla-charger-service/docs"
@@ -60,10 +61,17 @@ func NewRouter(cfg config.Config, oauthCfg *oauth2.Config, tokens store.TokenSto
 		oauthCfg: oauthCfg,
 		tokens:   tokens,
 		tesla:    tesla,
-		logger:   logger,
+		logger:   slog.New(telemetry.Handler{Handler: logger.Handler()}),
 	}
 
 	r := chi.NewRouter()
+	r.Use(telemetry.HTTP)
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+			next.ServeHTTP(w, request)
+			request.Pattern = chi.RouteContext(request.Context()).RoutePattern()
+		})
+	})
 	r.Use(s.requestLogger)
 	r.Get("/health", s.handleHealth)
 	r.Get("/.well-known/appspecific/com.tesla.3p.public-key.pem", s.handleFleetPublicKey)
